@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>8-Недельная Программа Прогрессии</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc; /* Slate 50 */
+            color: #1e293b; /* Slate 800 */
+        }
+
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 300px;
+            max-height: 400px;
+        }
+
+        /* Tempo Animation */
+        .tempo-visualizer {
+            width: 100%;
+            height: 8px;
+            background-color: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .tempo-bar {
+            height: 100%;
+            background-color: #10b981; /* Emerald 500 */
+            width: 0%;
+        }
+
+        @keyframes tempo-2-0-1 {
+            0% { width: 0%; left: 0; background-color: #ef4444; } /* Start eccentric */
+            66% { width: 100%; left: 0; background-color: #ef4444; } /* 2s Eccentric done */
+            67% { width: 100%; left: 0; background-color: #3b82f6; } /* Pause (0s - skip) */
+            100% { width: 0%; left: 0; background-color: #10b981; } /* 1s Concentric */
+        }
+
+        .animate-tempo {
+            animation: tempo-2-0-1 3s infinite linear;
+        }
+
+        .tab-active {
+            background-color: #10b981;
+            color: white;
+            border-color: #10b981;
+        }
+        
+        .tab-inactive {
+            background-color: white;
+            color: #64748b;
+            border-color: #e2e8f0;
+        }
+        .tab-inactive:hover {
+            border-color: #cbd5e1;
+            color: #334155;
+        }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        .modal-content {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        }
+        .loading-spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-top: 4px solid #10b981;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+    <!-- Chosen Palette: Slate (Neutral Backgrounds) & Emerald (Action/Success) for a calm, professional gym aesthetic. -->
+    <!-- Application Structure Plan:
+        1. Hero Section: Quick overview of the 8-week goal.
+        2. "The System" (Principles): Interactive cards explaining Tempo, RIR, and Deloads.
+        3. Dashboard (Interactive Schedule): The core feature. A Week/Day selector that dynamically renders the specific workout for that day, handling the logic of Sets, Reps, and Weight adjustments (Deload vs Progression).
+        4. Progression Visualizer: A Chart.js Line chart allowing users to simulate their strength gains over 8 weeks based on the program's algorithms.
+        5. Log Generator: A utility to copy the daily plan to clipboard.
+        6. Gemini Integration: Added Technique Checklist per exercise and Nutrition Strategy per week for enhanced planning.
+        Rationale: This structure moves from understanding the "Why" to executing the "What", visualizing the "Result", and providing dynamic, context-aware advice via LLM.
+    -->
+    <!-- Visualization & Content Choices:
+        1. Bar Chart (Volume/Intensity): Shows the wave-like structure of the program (Load vs Deload). Goal: Inform about periodization.
+        2. Line Chart (Strength Projection): Interactive simulation. Goal: Motivate by showing potential result.
+        3. Dynamic Tables/Cards: For the daily workouts. Preferred over static HTML tables for mobile responsiveness and interactivity (toggling weeks).
+        4. CSS Animation: To visually explain the 2-0-1 tempo.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+</head>
+<body class="antialiased min-h-screen flex flex-col">
+
+    <!-- Modal for LLM results and alerts -->
+    <div id="app-modal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="flex justify-between items-center mb-4">
+                <h4 id="modal-title" class="text-xl font-bold text-slate-900">Заголовок</h4>
+                <button onclick="closeModal()" class="text-slate-500 hover:text-slate-800 font-bold text-xl">&times;</button>
+            </div>
+            <div id="modal-body" class="text-slate-700 text-sm overflow-y-auto max-h-[70vh]">
+                <!-- Content or Spinner -->
+                <div id="modal-loading" class="hidden flex justify-center items-center py-8">
+                    <div class="loading-spinner"></div>
+                </div>
+            </div>
+            <div id="modal-sources" class="text-xs text-slate-500 mt-4 border-t pt-2 hidden">
+                <p class="font-semibold mb-1">Источники:</p>
+                <ul id="sources-list" class="list-disc list-inside space-y-1"></ul>
+            </div>
+            <button id="modal-close-btn" onclick="closeModal()" class="w-full mt-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition font-medium">Закрыть</button>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+        <div class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
+            <h1 class="text-xl font-bold text-slate-800 tracking-tight">8-Week <span class="text-emerald-600">Full-Body</span> Builder</h1>
+            <nav class="hidden md:flex space-x-6 text-sm font-medium text-slate-600">
+                <a href="#principles" class="hover:text-emerald-600 transition">Принципы</a>
+                <a href="#schedule" class="hover:text-emerald-600 transition">Тренировки</a>
+                <a href="#forecast" class="hover:text-emerald-600 transition">Прогноз</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="flex-grow">
+        
+        <!-- Hero Section -->
+        <section class="bg-slate-50 py-12 border-b border-slate-200">
+            <div class="max-w-4xl mx-auto px-4 text-center">
+                <h2 class="text-3xl md:text-4xl font-extrabold text-slate-900 mb-4">Система прогрессии силы и гипертрофии</h2>
+                <p class="text-lg text-slate-600 mb-8 max-w-2xl mx-auto">
+                    Полная 8-недельная программа: 3 дня в неделю, волнообразная периодизация, встроенные разгрузочные недели (Deload) и чёткая математика прогресса.
+                </p>
+                <div class="flex flex-wrap justify-center gap-4">
+                    <span class="px-4 py-2 bg-white border border-slate-200 rounded-full shadow-sm text-sm font-semibold text-slate-700">🗓️ 8 Недель</span>
+                    <span class="px-4 py-2 bg-white border border-slate-200 rounded-full shadow-sm text-sm font-semibold text-slate-700">💪 Full Body</span>
+                    <span class="px-4 py-2 bg-white border border-slate-200 rounded-full shadow-sm text-sm font-semibold text-slate-700">📉 RPE/RIR Контроль</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Principles & Logic Section -->
+        <section id="principles" class="py-12 max-w-6xl mx-auto px-4">
+            <div class="mb-8">
+                <h3 class="text-2xl font-bold text-slate-900 mb-2">Правила Игры</h3>
+                <p class="text-slate-600">Чтобы программа работала, критически важно соблюдать темп, время отдыха и механику прогрессии.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <!-- Tempo Card -->
+                <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition">
+                    <div class="text-emerald-600 text-2xl mb-2">⏱️</div>
+                    <h4 class="font-bold text-lg mb-2">Темп 2-0-1</h4>
+                    <p class="text-sm text-slate-600 mb-4">2 сек опускаем (эксцентрика), 0 сек пауза, 1 сек мощный подъем.</p>
+                    <div class="bg-slate-100 rounded p-2">
+                        <div class="text-xs text-center text-slate-400 mb-1">Визуализация повтора</div>
+                        <div class="tempo-visualizer">
+                            <div class="tempo-bar animate-tempo"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Progression Card -->
+                <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition">
+                    <div class="text-emerald-600 text-2xl mb-2">📈</div>
+                    <h4 class="font-bold text-lg mb-2">Прогрессия</h4>
+                    <p class="text-sm text-slate-600">
+                        Если выполнил план (например, 4x8) с запасом — на следующей неделе <strong>+2.5кг</strong> (верх) или <strong>+5-10кг</strong> (ноги).
+                    </p>
+                </div>
+
+                <!-- RIR Card -->
+                <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition">
+                    <div class="text-emerald-600 text-2xl mb-2">🔋</div>
+                    <h4 class="font-bold text-lg mb-2">RIR 1-2</h4>
+                    <p class="text-sm text-slate-600">
+                        Оставляй 1-2 повторения в запасе. Не работай до полного мышечного отказа, кроме последней недели перед разгрузкой.
+                    </p>
+                </div>
+
+                <!-- Deload Card -->
+                <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition">
+                    <div class="text-emerald-600 text-2xl mb-2">🛑</div>
+                    <h4 class="font-bold text-lg mb-2">Делоад (Deload)</h4>
+                    <p class="text-sm text-slate-600">
+                        Недели 4 и 8. Веса снижаются на 50%. Это не отдых, это восстановление ЦНС для нового рывка.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Dashboard: The Workout Schedule -->
+        <section id="schedule" class="bg-white py-12 border-y border-slate-200">
+            <div class="max-w-6xl mx-auto px-4">
+                <div class="mb-8 md:flex md:justify-between md:items-end">
+                    <div>
+                        <h3 class="text-2xl font-bold text-slate-900 mb-2">Дневник Тренировок</h3>
+                        <p class="text-slate-600 max-w-2xl">
+                            Выберите текущую неделю и день, чтобы получить точный план. Программа автоматически адаптирует подходы и рекомендации по весу.
+                        </p>
+                    </div>
+                    <div class="mt-4 md:mt-0">
+                        <button onclick="copyWorkoutToClipboard()" class="inline-flex items-center px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition text-sm font-medium">
+                            📋 Скопировать план дня
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Week Selector -->
+                <div class="mb-6 overflow-x-auto pb-2">
+                    <div class="flex space-x-2" id="week-selector">
+                        <!-- JS generated weeks -->
+                    </div>
+                </div>
+
+                <!-- Day Selector -->
+                <div class="flex justify-center mb-8">
+                    <div class="bg-slate-100 p-1 rounded-lg inline-flex" id="day-selector">
+                        <button onclick="selectDay('Mon')" id="btn-Mon" class="px-6 py-2 rounded-md text-sm font-medium transition tab-active shadow-sm">Понедельник</button>
+                        <button onclick="selectDay('Wed')" id="btn-Wed" class="px-6 py-2 rounded-md text-sm font-medium transition text-slate-600 hover:text-slate-900">Среда</button>
+                        <button onclick="selectDay('Fri')" id="btn-Fri" class="px-6 py-2 rounded-md text-sm font-medium transition text-slate-600 hover:text-slate-900">Пятница</button>
+                    </div>
+                </div>
+
+                <!-- Dynamic Content Area -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    
+                    <!-- Workout List -->
+                    <div class="lg:col-span-2 space-y-4" id="workout-list">
+                        <!-- Exercises will be injected here -->
+                    </div>
+
+                    <!-- Context/Notes Sidebar -->
+                    <div class="lg:col-span-1">
+                        <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-6 sticky top-24">
+                            <h4 class="font-bold text-emerald-900 mb-4 text-lg">Фокус этой недели</h4>
+                            <div id="week-notes" class="text-sm text-emerald-800 space-y-3">
+                                <!-- Dynamic notes -->
+                            </div>
+                            
+                            <button onclick="generateNutritionStrategy()" class="w-full mt-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition font-medium text-sm flex items-center justify-center space-x-2">
+                                <span>✨ План Питания</span>
+                            </button>
+
+                            <hr class="my-6 border-emerald-200">
+                            
+                            <h4 class="font-bold text-emerald-900 mb-2">Настройки разминки</h4>
+                            <ul class="text-sm text-emerald-800 space-y-1 list-disc list-inside">
+                                <li>5-10 мин легкое кардио</li>
+                                <li>Суставная гимнастика</li>
+                                <li>2 подхода разминки (50% и 70% веса)</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Visualization Section -->
+        <section id="forecast" class="py-12 max-w-6xl mx-auto px-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-12">
+                <!-- Structure Viz -->
+                <div>
+                    <h3 class="text-xl font-bold text-slate-900 mb-4">Структура Интенсивности</h3>
+                    <p class="text-slate-600 text-sm mb-6">График показывает, как меняется нагрузка. Обратите внимание на недели 4 и 8 — это стратегический спад для суперкомпенсации.</p>
+                    <div class="chart-container bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+    7                    <canvas id="structureChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Simulation Viz -->
+                <div>
+                    <h3 class="text-xl font-bold text-slate-900 mb-4">Симулятор Прогресса (Жим ногами)</h3>
+                    <p class="text-slate-600 text-sm mb-4">Введите ваш текущий рабочий вес, чтобы увидеть цель к концу 8-й недели.</p>
+                    
+                    <div class="flex items-center gap-4 mb-4">
+                        <label class="text-sm font-semibold text-slate-700">Стартовый вес (кг):</label>
+                        <input type="number" id="startWeightInput" value="100" class="w-24 p-2 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none" onchange="updateProgressionChart()">
+                    </div>
+
+                    <div class="chart-container bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                        <canvas id="progressionChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="bg-slate-900 text-slate-400 py-8 text-center text-sm">
+        <p>Создано на основе 8-недельной программы Full-Body.</p>
+        <p class="mt-2 text-slate-500">Помните: Техника > Вес.</p>
+    </footer>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        // --- API CONFIGURATION ---
+        const apiKey = "";
+        const apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent";
+        
+        // --- UTILITY FUNCTIONS ---
+
+        function showModal(title, content, sources = []) {
+            const modal = document.getElementById('app-modal');
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-body').innerHTML = content;
+            
+            const sourcesContainer = document.getElementById('modal-sources');
+            const sourcesList = document.getElementById('sources-list');
+            sourcesList.innerHTML = '';
+
+            if (sources.length > 0) {
+                sources.forEach(s => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<a href="${s.uri}" target="_blank" class="text-blue-600 hover:text-blue-800">${s.title}</a>`;
+                    sourcesList.appendChild(li);
+                });
+                sourcesContainer.classList.remove('hidden');
+            } else {
+                sourcesContainer.classList.add('hidden');
+            }
+
+            modal.style.display = 'flex';
+            document.getElementById('modal-loading').classList.add('hidden');
+        }
+
+        function showLoading(title) {
+            const modal = document.getElementById('app-modal');
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-body').innerHTML = `<div class="flex justify-center items-center py-8"><div class="loading-spinner"></div></div><p class="text-center mt-4">Идет генерация...</p>`;
+            document.getElementById('modal-sources').classList.add('hidden');
+            modal.style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('app-modal').style.display = 'none';
+        }
+
+        async function fetchWithExponentialBackoff(url, options, maxRetries = 5) {
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) {
+                        if (response.status === 429 && i < maxRetries - 1) {
+                            const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                            continue;
+                        }
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                } catch (error) {
+                    if (i === maxRetries - 1) throw error;
+                    const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+        }
+
+        // --- GEMINI API CALLS ---
+
+        async function generateNutritionStrategy() {
+            const currentWeekType = weekLogic[currentWeek].type; // Base, Progression, Peak, Deload
+            const weekDescription = weekLogic[currentWeek].msg;
+
+            showLoading(`✨ План Питания: Неделя ${currentWeek}`);
+            
+            const systemPrompt = "Вы являетесь экспертом по спортивному питанию. Предоставьте краткий, однопараграфный план питания, включая рекомендации по макросам (белки, жиры, углеводы) и калориям, основанный на типе тренировочной недели. Используйте русский язык.";
+            const userQuery = `Тренировочная неделя: ${currentWeekType} (${weekDescription}). Требуется: Краткий план питания для гипертрофии и прогресса силы.`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                tools: [{ "google_search": {} }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+            };
+
+            try {
+                const response = await fetchWithExponentialBackoff(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const candidate = response.candidates?.[0];
+                let content = "Не удалось сгенерировать рекомендации.";
+                let sources = [];
+
+                if (candidate && candidate.content?.parts?.[0]?.text) {
+                    content = candidate.content.parts[0].text.replace(/\n/g, '<br>');
+                    
+                    const groundingMetadata = candidate.groundingMetadata;
+                    if (groundingMetadata && groundingMetadata.groundingAttributions) {
+                        sources = groundingMetadata.groundingAttributions
+                            .map(attribution => ({
+                                uri: attribution.web?.uri,
+                                title: attribution.web?.title,
+                            }))
+                            .filter(source => source.uri && source.title);
+                    }
+                }
+                showModal(`✨ План Питания: Неделя ${currentWeek}`, content, sources);
+
+            } catch (error) {
+                showModal(`Ошибка API`, `Произошла ошибка при запросе к Gemini: ${error.message}`);
+            }
+        }
+
+        async function generateTechniqueChecklist(exerciseName, instruction) {
+            showLoading(`✨ Техника: ${exerciseName}`);
+            
+            const currentReps = weekLogic[currentWeek].mod({ base: "3x10" }); // Use a generic base to get RIR info
+            const currentRIR = (currentWeek === 7) ? "RIR 1 (почти отказ)" : (currentWeek === 3) ? "RIR 2" : "RIR 2-3"; // Approximate RIR based on week
+            
+            const systemPrompt = "Вы — опытный тренер. Предоставьте три ключевых пункта правильной техники выполнения и два наиболее распространенных критических провала в форме (ошибки) для указанного упражнения, учитывая, что атлет работает с RIR 1-3. Отформатируйте ответ в виде простого списка на русском языке. Не используйте жирный текст.";
+            const userQuery = `Упражнение: ${exerciseName}. Текущий RIR/Интенсивность: ${currentRIR}.`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+            };
+
+            try {
+                const response = await fetchWithExponentialBackoff(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const candidate = response.candidates?.[0];
+                let content = "Не удалось сгенерировать контрольный список.";
+
+                if (candidate && candidate.content?.parts?.[0]?.text) {
+                    let text = candidate.content.parts[0].text;
+                    // Format the response for display (replace - or * with list items)
+                    content = text.split('\n').map(line => {
+                        if (line.trim().startsWith('-') || line.trim().startsWith('*')) {
+                            return `<li class="text-sm ml-4 list-disc">${line.substring(1).trim()}</li>`;
+                        }
+                        return `<p class="mt-2 text-base font-semibold">${line}</p>`;
+                    }).join('');
+                    
+                    content = `<p class="font-bold text-slate-800 mb-2">Ключевые пункты:</p><ul class="space-y-1">${content}</ul>`;
+                }
+
+                showModal(`✨ Техника: ${exerciseName}`, content);
+
+            } catch (error) {
+                showModal(`Ошибка API`, `Произошла ошибка при запросе к Gemini: ${error.message}`);
+            }
+        }
+
+        // --- DATA STORE ---
+        
+        const programData = {
+            weeks: [1, 2, 3, 4, 5, 6, 7, 8],
+            days: ['Mon', 'Wed', 'Fri'],
+            // Structure definitions for Charts
+            intensity: [70, 80, 90, 40, 75, 85, 95, 40], // Relative intensity %
+            
+            // Workout Definitions
+            workouts: {
+                Mon: {
+                    title: "Грудь + Вертикальная тяга + Руки",
+                    exercises: [
+                        { name: "Жим в тренажёре", base: "4x8", id: "chest_press", group: "Грудные, верхняя часть" },
+                        { name: "Тяга верхнего блока", base: "4x10", id: "lat_pull", group: "Широчайшие мышцы спины" },
+                        { name: "Махи гантелями", base: "3x12", note: "Темп 1-0-1", id: "lat_raise", group: "Средняя дельта" },
+                        { name: "Трицепс на блоке", base: "3x10", id: "tricep", group: "Трицепс" },
+                        { name: "Бицепс в машине", base: "3x10", id: "bicep", group: "Бицепс" }
+                    ]
+                },
+                Wed: {
+                    title: "Горизонталь + Задняя цепь",
+                    exercises: [
+                        { name: "Жим гантелей (наклон 30°)", base: "4x10", id: "incline_press", group: "Грудные, верхняя часть" },
+                        { name: "Тяга к поясу", base: "4x10", id: "row", group: "Спина, горизонтальная тяга" },
+                        { name: "Сгибание ног лёжа", base: "3x12", id: "leg_curl", group: "Бицепс бедра" },
+                        { name: "Разведение (задняя дельта)", base: "3x12", note: "Темп 1-0-1", id: "rear_delt", group: "Задняя дельта" },
+                        { name: "Пресс (скручивания)", base: "3x12", id: "abs", group: "Пресс" }
+                    ]
+                },
+                Fri: {
+                    title: "Ноги (Тяжёлые) + Верх",
+                    exercises: [
+                        { name: "Жим ногами (Тяжёлый)", base: "4x8", note: "Прибавка +5-10кг", id: "leg_press", group: "Квадрицепсы, ягодицы" },
+                        { name: "Подтягивания / Гравитрон", base: "4x10", id: "pullup", group: "Широчайшие мышцы спины" },
+                        { name: "Жим штанги лёжа", base: "3x8", id: "bench", group: "Грудные" },
+                        { name: "Разгибание ног", base: "3x12", id: "leg_ext", group: "Квадрицепсы" },
+                        { name: "Бицепс (обр. хват)", base: "3x10", id: "bicep_rev", group: "Предплечья, бицепс" },
+                        { name: "Трицепс (из-за головы)", base: "3x10", id: "tricep_ov", group: "Трицепс" }
+                    ]
+                }
+            }
+        };
+
+        // Specific modifications per week
+        const weekLogic = {
+            1: { type: "Base", msg: "Базовая неделя. Найдите рабочий вес RPE 7.", mod: (ex) => ex.base },
+            2: { type: "Progression", msg: "Увеличиваем вес! +2.5кг для верха, +5-10кг для ног.", mod: (ex) => {
+                if(ex.base.startsWith('4x8')) return '4x7';
+                if(ex.base.startsWith('4x10')) return '4x9';
+                if(ex.base.startsWith('3x12')) return '3x11';
+                if(ex.base.startsWith('3x10')) return '3x9-10'; // Keep range
+                if(ex.base.startsWith('3x8')) return '3x7';
+                return ex.base;
+            }},
+            3: { type: "Peak", msg: "Пик мезоцикла. Еще +2.5кг/+5кг. Будет тяжело.", mod: (ex) => {
+                if(ex.base.startsWith('4x8')) return '4x6';
+                if(ex.base.startsWith('4x10')) return '4x8';
+                if(ex.base.startsWith('3x12')) return '3x10';
+                if(ex.base.startsWith('3x10')) return '3x8-10';
+                if(ex.base.startsWith('3x8')) return '3x6';
+                return ex.base;
+            }},
+            4: { type: "Deload", msg: "РАЗГРУЗКА. Снизьте веса на 50%. Техника идеальная.", mod: (ex) => {
+                // Halve sets roughly
+                let parts = ex.base.split('x');
+                let sets = Math.floor(parseInt(parts[0]) / 2) || 2;
+                return `${sets}x${parts[1]}`;
+            }},
+            5: { type: "Base", msg: "Новый цикл. Вес чуть больше, чем на Неделе 1.", mod: (ex) => ex.base },
+            6: { type: "Progression", msg: "Прогрессия от Недели 5.", mod: (ex) => weekLogic[2].mod(ex) }, // Same logic as wk 2
+            7: { type: "Peak", msg: "Финальный рывок. Максимальные веса цикла.", mod: (ex) => weekLogic[3].mod(ex) }, // Same logic as wk 3
+            8: { type: "Deload", msg: "Финальная разгрузка.", mod: (ex) => weekLogic[4].mod(ex) }
+        };
+
+        // --- STATE ---
+        let currentWeek = 1;
+        let currentDay = 'Mon';
+        
+        // --- CHARTS INSTANCES ---
+        let structureChartInst = null;
+        let progressionChartInst = null;
+
+        // --- INITIALIZATION ---
+        document.addEventListener('DOMContentLoaded', () => {
+            renderWeekSelector();
+            renderWorkout();
+            initStructureChart();
+            initProgressionChart();
+        });
+
+        // --- RENDER FUNCTIONS ---
+
+        function renderWeekSelector() {
+            const container = document.getElementById('week-selector');
+            container.innerHTML = '';
+            programData.weeks.forEach(w => {
+                const btn = document.createElement('button');
+                btn.className = `flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold transition border-2 ${w === currentWeek ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-500 border-slate-200 hover:border-emerald-300'}`;
+                btn.innerText = w;
+                btn.onclick = () => {
+                    currentWeek = w;
+                    renderWeekSelector(); // Re-render to update active class
+                    renderWorkout();
+                    updateWeekNotes();
+                };
+                container.appendChild(btn);
+            });
+            updateWeekNotes();
+        }
+
+        function selectDay(day) {
+            currentDay = day;
+            // Update Tab Styles
+            ['Mon', 'Wed', 'Fri'].forEach(d => {
+                const el = document.getElementById(`btn-${d}`);
+                if (d === day) {
+                    el.className = "px-6 py-2 rounded-md text-sm font-medium transition tab-active shadow-sm";
+                } else {
+                    el.className = "px-6 py-2 rounded-md text-sm font-medium transition tab-inactive";
+                }
+            });
+            renderWorkout();
+        }
+
+        function updateWeekNotes() {
+            const notesContainer = document.getElementById('week-notes');
+            const logic = weekLogic[currentWeek];
+            
+            let html = `<p class="font-semibold text-emerald-700">${logic.type}</p>`;
+            html += `<p>${logic.msg}</p>`;
+            
+            if (currentWeek === 4 || currentWeek === 8) {
+                html += `<div class="mt-2 p-2 bg-emerald-100 rounded text-xs font-bold uppercase tracking-wide">📉 Интенсивность -50%</div>`;
+            } else if (currentWeek > 1 && currentWeek !== 5) {
+                html += `<div class="mt-2 p-2 bg-emerald-100 rounded text-xs font-bold uppercase tracking-wide">📈 Цель: Повысить веса</div>`;
+            }
+
+            notesContainer.innerHTML = html;
+        }
+
+        function renderWorkout() {
+            const list = document.getElementById('workout-list');
+            list.innerHTML = '';
+
+            const dayData = programData.workouts[currentDay];
+            const logic = weekLogic[currentWeek];
+
+            // Day Title
+            const header = document.createElement('div');
+            header.innerHTML = `<h3 class="text-xl font-bold text-slate-800 mb-4 border-b pb-2">${dayData.title}</h3>`;
+            list.appendChild(header);
+
+            dayData.exercises.forEach(ex => {
+                const card = document.createElement('div');
+                card.className = "flex flex-col sm:flex-row items-start sm:items-center justify-between bg-white border border-slate-200 p-4 rounded-lg hover:border-emerald-400 transition group";
+                
+                // Calculate modified reps based on week logic
+                let displayReps = logic.mod(ex);
+                let instruction = "";
+
+                // Deload specific styling
+                let badgeClass = "bg-slate-100 text-slate-600";
+                
+                if (currentWeek === 4 || currentWeek === 8) {
+                     instruction = "Вес 50% от рабочего";
+                     badgeClass = "bg-emerald-100 text-emerald-700";
+                } else {
+                    // Progression instructions
+                    if (currentWeek === 2 || currentWeek === 3 || currentWeek === 6 || currentWeek === 7) {
+                        if (ex.id === 'leg_press') {
+                            instruction = "Добавь +5-10кг";
+                        } else if (['chest_press', 'lat_pull', 'incline_press', 'row', 'bench'].includes(ex.id)) {
+                             instruction = "Добавь +2.5кг";
+                        }
+                    }
+                    if (ex.note) instruction = instruction ? `${instruction} | ${ex.note}` : ex.note;
+                }
+
+                card.innerHTML = `
+                    <div class="mb-3 sm:mb-0 sm:mr-4 flex-grow">
+                        <h5 class="font-bold text-slate-900 group-hover:text-emerald-700 transition">${ex.name}</h5>
+                        <p class="text-xs text-slate-500 mt-1">${instruction || "Соблюдай технику"}</p>
+                        <button onclick="generateTechniqueChecklist('${ex.name}', '${instruction}')" class="mt-2 text-xs font-medium text-emerald-600 hover:text-emerald-800 transition flex items-center space-x-1">
+                            <span>✨ Техника и Ошибки</span>
+                        </button>
+                    </div>
+                    <div class="text-right flex-shrink-0">
+                        <span class="inline-block px-3 py-1 rounded font-mono font-bold text-lg ${badgeClass}">${displayReps}</span>
+                        <div class="text-xs text-slate-400 mt-1 text-center">Подходы × Повт</div>
+                    </div>
+                `;
+                list.appendChild(card);
+            });
+        }
+
+        // --- CHARTS FUNCTIONS ---
+
+        function initStructureChart() {
+            const ctx = document.getElementById('structureChart').getContext('2d');
+            structureChartInst = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Н1 Base', 'Н2 Prog', 'Н3 Peak', 'Н4 Deload', 'Н5 Base', 'Н6 Prog', 'Н7 Peak', 'Н8 Deload'],
+                    datasets: [{
+                        label: 'Интенсивность (%)',
+                        data: programData.intensity,
+                        backgroundColor: (ctx) => {
+                            const v = ctx.raw;
+                            return v < 50 ? '#10b981' : '#334155'; // Emerald for deload, Slate for work
+                        },
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: true, max: 100 }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+        }
+
+        function initProgressionChart() {
+            const ctx = document.getElementById('progressionChart').getContext('2d');
+            progressionChartInst = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: ['Старт', 'Н1', 'Н2', 'Н3', 'Н4 (Deload)', 'Н5', 'Н6', 'Н7', 'Н8 (Deload)'],
+                    datasets: [{
+                        label: 'Рабочий вес (Кг)',
+                        data: [], // Populated by update fn
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        fill: true,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: false } // Auto scale
+                    }
+                }
+            });
+            updateProgressionChart();
+        }
+
+        function updateProgressionChart() {
+            const startWeight = parseFloat(document.getElementById('startWeightInput').value) || 100;
+            const increment = 5; // Conservative estimate for legs
+
+            // Logic: 
+            // W1: Start
+            // W2: +5
+            // W3: +5
+            // W4: Drop 50%
+            // W5: Start + 2.5 (slight increase over W1)
+            // W6: W5 + 5
+            // W7: W6 + 5
+            // W8: Drop 50%
+            
+            const w1 = startWeight;
+            const w2 = w1 + increment;
+            const w3 = w2 + increment;
+            const w4 = w3 * 0.5;
+            const w5 = w1 + 2.5; // New cycle starts slightly higher
+            const w6 = w5 + increment;
+            const w7 = w6 + increment;
+            const w8 = w7 * 0.5;
+
+            const data = [startWeight, w1, w2, w3, w4, w5, w6, w7, w8];
+            
+            progressionChartInst.data.datasets[0].data = data;
+            progressionChartInst.update();
+        }
+
+        // --- UTILS ---
+        function copyWorkoutToClipboard() {
+            const dayData = programData.workouts[currentDay];
+            const logic = weekLogic[currentWeek];
+            
+            let text = `📅 Неделя ${currentWeek} - ${currentDay === 'Mon' ? 'Понедельник' : currentDay === 'Wed' ? 'Среда' : 'Пятница'}\n`;
+            text += `🔥 ${dayData.title}\n`;
+            text += `📝 Заметки: ${logic.msg}\n\n`;
+            
+            dayData.exercises.forEach(ex => {
+                let reps = logic.mod(ex);
+                // Deload weight adjustment text
+                let note = (currentWeek === 4 || currentWeek === 8) ? " (50% веса)" : "";
+                text += `◻️ ${ex.name}: ${reps}${note}\n`;
+            });
+            
+            text += `\n🎯 RPE 7-8 | Отдых 90-120с`;
+
+            navigator.clipboard.writeText(text).then(() => {
+                showModal('Копирование успешно', 'План тренировки скопирован в буфер обмена.');
+            }).catch(err => {
+                showModal('Ошибка копирования', `Не удалось скопировать текст: ${err.message}`);
+            });
+        }
+    </script>
+</body>
+</html>
